@@ -42,20 +42,24 @@ foreground_leader() {
 # An idle shell is not something to restore. A login shell has argv[0] of "-zsh",
 # and basename would read the dash as an option, so it is stripped first.
 is_pane_shell() {
-	local first="${1%% *}" shell
+	local shell
 	shell="$(tmux show-option -gqv default-shell)"
 	[ -n "$shell" ] || shell="$SHELL"
-	[ "$(basename "${first#-}")" = "$(basename "${shell:-/bin/sh}")" ]
+	[ "$(basename "${1#-}")" = "$(basename "${shell:-/bin/sh}")" ]
 }
 
 full_command() {
-	local leader command
+	local leader command argv
 	leader="$(foreground_leader)" || return 0
 	[ -n "$leader" ] || return 0
-	command="$(\tr '\0' ' ' < "/proc/$leader/cmdline" 2>/dev/null | \sed 's/ *$//')"
-	[ -n "$command" ] || return 0
-	is_pane_shell "$command" && return 0
-	echo "$command"
+	# The saved string is replayed with send-keys into a shell, so it has to be
+	# shell-quoted. Joining the NUL-separated argv on spaces -- what every other
+	# strategy does -- silently breaks any argument containing one.
+	mapfile -d '' -t argv < "/proc/$leader/cmdline" 2>/dev/null || return 0
+	[ "${#argv[@]}" -gt 0 ] || return 0
+	is_pane_shell "${argv[0]}" && return 0
+	command="$(\printf '%q ' "${argv[@]}")"
+	echo "${command% }"
 }
 
 main() {
