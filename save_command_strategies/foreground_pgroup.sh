@@ -48,10 +48,34 @@ is_pane_shell() {
 	[ "$(basename "${1#-}")" = "$(basename "${shell:-/bin/sh}")" ]
 }
 
+# A pipeline is one process group with several members joined by pipes, and only
+# its first member is the leader. Saving that alone would restore `journalctl -f`
+# where the pane was running `journalctl -f | grep foo` -- a command that looks
+# fine and does something else. Nothing is saved instead. Reconstructing the
+# whole pipeline would mean ordering the members by their pipe inodes, which is
+# possible but has no consumer: a pipeline never matches @resurrect-processes.
+#
+# The test is the leader's stdout being a pipe that another member of the same
+# group reads. It is not just "the group has more than one member": a program
+# with its own children -- claude and its MCP servers -- is that too, and it is
+# exactly what this strategy exists to save.
+leader_writes_to_group_pipe() {
+	local leader="$1" tpgid="$2" out member
+	out="$(\readlink "/proc/$leader/fd/1" 2>/dev/null)" || return 1
+	case "$out" in pipe:*) ;; *) return 1 ;; esac
+	for member in $(\ps -eo pid=,pgid= | \awk -v g="$tpgid" '$2 == g { print $1 }'); do
+		[ "$member" = "$leader" ] && continue
+		[ "$(\readlink "/proc/$member/fd/0" 2>/dev/null)" = "$out" ] && return 0
+	done
+	return 1
+}
+
 full_command() {
-	local leader command argv
+	local leader command argv tpgid
+	tpgid="$(stat_field "$PANE_PID" 6)"
 	leader="$(foreground_leader)" || return 0
 	[ -n "$leader" ] || return 0
+	leader_writes_to_group_pipe "$leader" "$tpgid" && return 0
 	# The saved string is replayed with send-keys into a shell, so it has to be
 	# shell-quoted. Joining the NUL-separated argv on spaces -- what every other
 	# strategy does -- silently breaks any argument containing one.
