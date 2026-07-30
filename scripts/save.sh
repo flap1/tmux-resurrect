@@ -39,7 +39,13 @@ pane_format() {
 	format+="${delimiter}"
 	format+="#{pane_index}"
 	format+="${delimiter}"
-	format+="#{pane_title}"
+	# An empty pane_title collapses in dump_panes: it reads this dump back with
+	# IFS=$'\t', tab is an IFS whitespace character, so consecutive tabs count as
+	# one delimiter and every field after pane_title shifts left -- pane_active
+	# lands in dir, pane_pid leaks into pane_command, and pane_full_command is
+	# then computed from history_size. restore.sh reads through the same collapse,
+	# so such a pane comes back in the wrong directory with no command at all.
+	format+="#{?pane_title,#{pane_title},_}"
 	format+="${delimiter}"
 	format+=":#{pane_current_path}"
 	format+="${delimiter}"
