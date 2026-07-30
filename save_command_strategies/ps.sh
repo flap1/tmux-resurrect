@@ -13,7 +13,10 @@ exit_safely_if_empty_ppid() {
 full_command() {
 	ps -ao "ppid,args" |
 		sed "s/^ *//" |
-		grep "^${PANE_PID}" |
+		# Anchored on the space: without it a pane_pid of 2255 also matches ppid
+		# 22551, and the unrelated descendants come out as extra lines in a file
+		# that is one tab-separated record per line.
+		grep "^${PANE_PID} " |
 		cut -d' ' -f2-
 }
 
